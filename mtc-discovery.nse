@@ -13,10 +13,10 @@ description = [[
 --
 --@output
 -- 5000/tcp open  unknown
--- | mtc-discovery: 
+-- | mtc-discovery:
 -- |   agent-version: 1.4.0.12
--- |   devices: 
--- |     
+-- |   devices:
+-- |
 -- |       manufacturer: Mazak_Corporation
 -- |       serialNumber: 304141
 -- |_      name: MFMS10-MC2
@@ -45,6 +45,8 @@ local startElement = {
     -- Get device name in device tag
     Device = function(agent)
         agent.parser._call.attribute = function(name, value)
+            -- Assume the first attribute name is the device name,
+            -- pass if set to avoid catching other nested tags attribute names
             if not agent.device.name and name == "name" then
                 agent.device.name = value
             end
@@ -53,42 +55,45 @@ local startElement = {
     -- Get device manufacturer and serialNumber in device description tag
     Description = function(agent)
         agent.parser._call.attribute = function(name, value)
-            if name == "manufacturer" then
-                agent.device.manufacturer = value
-            end
-            if name == "serialNumber" then
-                agent.device.serialNumber = value
+            if name == "manufacturer" or name == "serialNumber" then
+                agent.device[name] = value
             end
         end
     end,
 }
 
+local clean_attribute = function(agent)
+    agent.parser._call.attribute = nil
+end
+
 local closeElement = {
     -- Clean attribute function
-    Header = function(agent)
-        agent.parser._call.attribute = nil
-    end,
+    Header = clean_attribute,
     -- Clean attribute function
-    Devices = function(agent)
-        agent.parser._call.attribute = nil
-    end,
+    Devices = clean_attribute,
     -- Clean attribute function
-    Device = function(agent)
-        agent.parser._call.attribute = nil
-    end,
+    Device = clean_attribute,
     -- Add device to list and clean
     Description = function(agent)
         table.insert(agent.devices, agent.device)
         agent.device = {}
-        agent.parser._call.attribute = nil
+        clean_attribute(agent)
     end,
 }
 
 
-local output = stdnse.output_table()
-local path = "/probe"
 
-portrule = function(host, port)
+local PATH = "/probe"
+-- Maybe use a script-args for options
+local options = {
+    timeout = 10000,
+    header = {
+        Accept = "text/xml",
+        ["User-Agent"] = "Mozilla/5.0"
+    },
+}
+
+portrule = function(_, port)
     return port.protocol == "tcp" and port.state == "open"
 end
 
@@ -97,35 +102,32 @@ action = function(host, port)
         version = "",
         devices = {}
     }
-    -- Maybe use a script-args for options
-    local options = {
-        timeout = 10000,
-        header = {
-            Accept = "text/xml",
-            ["User-Agent"] = "Mozilla/5.0" 
-        },
-    }
-    local res = http.get(host, port, path, options)
-    
+    local res = http.get(host, port, PATH, options)
+
     -- Quit if response status failed
-    if res.status > 400 then
-        return 
+    if res.status >= 400 then
+        return
+    end
+    
+    --Check if element callback exist and execute or pass
+    local execute_callback = function(cb, name)
+        return cb[name] and cb[name](agent) or nil
     end
     -- Assign callbacks to parser
     agent.parser = slaxml.parser:new({
         startElement = function(name)
-            return startElement[name] and startElement[name](agent) or nil
+            execute_callback(startElement, name)
         end,
         closeElement = function(name)
-            return startElement[name] and closeElement[name](agent) or nil
+            execute_callback(closeElement, name)
         end,
     })
     -- Parse response body
     agent.parser:parseSAX(res.body)
 
     -- Generate result
+    local output = stdnse.output_table()
     output["agent-version"] = agent.version or ""
     output.devices = agent.devices or {}
-    
     return output
 end
