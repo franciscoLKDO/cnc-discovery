@@ -19,8 +19,8 @@ description = [[
 -- |       name:   MFMS10-MC2
 -- |       serialNumber:   304141
 -- |       manufacturer:   Mazak_Corporation
--- |       current:        127.0.0.1:8000/MFMS10-MC2/current
--- |       sample:         127.0.0.1:8000/MFMS10-MC2/sample
+-- |       current:        127.0.0.1:5000/MFMS10-MC2/current
+-- |       sample:         127.0.0.1:5000/MFMS10-MC2/sample
 
 -- TODO: Add events listing
 
@@ -103,10 +103,15 @@ local format_output = function(output)
 
     local keys = { DEVICE_NAME, SERIALNUMBER, MANUFACTURER, CURRENT, SAMPLE }
     output_str = output_str .. "   devices:\n\t"
-    for i, device in pairs(output.devices) do        
+    for i, device in pairs(output.devices) do
         for _, key in pairs(keys) do
-            device[key] = device[key] or ""
-            output_str = output_str .. key .. ": \t" .. device[key] .. "\n\t"
+            local ntab = 1
+            local keyp = key .. ":"
+            -- allign values 
+            if string.len(keyp) < 8 then
+                ntab = 2
+            end
+            output_str = output_str .. keyp .. string.rep("\t", ntab) .. (device[key] or "-") .. "\n\t"
         end
         -- Add new line except for last device
         if i < #output.devices then
