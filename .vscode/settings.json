@@ -1,9 +1,0 @@
-{
-    "Lua.diagnostics.globals": [
-        "portrule",
-        "action",
-        "description",
-        "author",
-        "categories"
-    ]
-}
